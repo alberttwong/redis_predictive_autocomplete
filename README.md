@@ -48,6 +48,24 @@ npm run generate:data
 
 That creates `data/disney-products.json`.
 
+## OpenAI embeddings
+
+The default seed path uses a local 32-dimension demo embedding so the app works without an API key. To replace the stored vectors with OpenAI `text-embedding-3-small` embeddings and rebuild the Redis vector index at 1536 dimensions:
+
+```bash
+OPENAI_API_KEY=... npm run embeddings:openai
+```
+
+Useful options:
+
+```bash
+OPENAI_API_KEY=... npm run embeddings:openai -- --batch-size 50
+OPENAI_API_KEY=... npm run embeddings:openai -- --limit 25
+npm run embeddings:openai -- --dry-run --limit 3
+```
+
+After re-embedding Redis, restart the server with `OPENAI_API_KEY` set so semantic and hybrid search queries use the same model as the stored product vectors. The script keeps product JSON documents and autocomplete suggestions, drops only the search index, updates `$.embedding`, then recreates `idx:disney_products`.
+
 ## Redis Cloud deployment
 
 This workspace is currently pointed at a non-Flex Redis Cloud database via `.env`.

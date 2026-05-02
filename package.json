@@ -8,6 +8,7 @@
     "server": "node --env-file=.env src/server.js",
     "client": "vite --host 0.0.0.0",
     "seed": "node --env-file=.env scripts/seed.js",
+    "embeddings:openai": "node --env-file=.env scripts/reembed-openai.js",
     "redis-cloud:delete": "node scripts/delete-redis-cloud-instance.js",
     "generate:data": "node scripts/generate-data.js",
     "build": "vite build",

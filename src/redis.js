@@ -8,6 +8,7 @@ import {
   escapeTag,
   vectorToBuffer
 } from "../scripts/product-utils.js";
+import { embedTextWithOpenAI } from "../scripts/openai-embeddings.js";
 
 export const client = createClient({ url: process.env.REDIS_URL ?? "redis://localhost:6379" });
 
@@ -113,6 +114,11 @@ function buildTextQuery(term, filters) {
         .join(" ")
     : "*";
   return [filters, text].filter(Boolean).join(" ");
+}
+
+async function embedQueryText(text) {
+  if (process.env.OPENAI_API_KEY) return embedTextWithOpenAI(text);
+  return embedText(text);
 }
 
 async function hybridSearch(query, vector, filters, combine, limit) {
@@ -247,7 +253,7 @@ export async function fullTextProducts(params) {
 
 export async function semanticProducts(params) {
   const limit = Number(params.limit ?? 12);
-  const vector = embedText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
+  const vector = await embedQueryText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
   const rows = await vectorSearch(vector, limit);
   return { ...parseSearchRows(rows), mode: "FT.SEARCH VECTOR KNN" };
 }
@@ -304,7 +310,7 @@ export async function searchProducts(params) {
   const limit = Number(params.limit ?? 12);
   const filters = buildFilters(params);
   const query = buildTextQuery(params.q ?? "", filters);
-  const vector = embedText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
+  const vector = await embedQueryText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
 
   try {
     const rows = await hybridSearch(query, vector, filters, params.combine, limit);
