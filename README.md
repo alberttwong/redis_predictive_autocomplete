@@ -11,6 +11,8 @@ Redis docs used for the implementation:
 
 ## Run it
 
+For local Redis with the built-in demo embeddings:
+
 ```bash
 npm install
 docker compose up -d
@@ -19,6 +21,8 @@ npm run dev
 ```
 
 Open the Vite URL, usually `http://localhost:5173`.
+
+For the Redis Cloud database in this workspace, `.env` already points `REDIS_URL` at the non-Flex cloud database, so you do not need `docker compose up -d`.
 
 ## What gets loaded
 
@@ -53,18 +57,47 @@ That creates `data/disney-products.json`.
 The default seed path uses a local 32-dimension demo embedding so the app works without an API key. To replace the stored vectors with OpenAI `text-embedding-3-small` embeddings and rebuild the Redis vector index at 1536 dimensions:
 
 ```bash
-OPENAI_API_KEY=... npm run embeddings:openai
+read -s OPENAI_API_KEY
+export OPENAI_API_KEY
+npm run embeddings:openai -- --batch-size 50
 ```
 
 Useful options:
 
 ```bash
-OPENAI_API_KEY=... npm run embeddings:openai -- --batch-size 50
-OPENAI_API_KEY=... npm run embeddings:openai -- --limit 25
 npm run embeddings:openai -- --dry-run --limit 3
+npm run embeddings:openai -- --limit 25
+npm run embeddings:openai -- --batch-size 100
 ```
 
-After re-embedding Redis, restart the server with `OPENAI_API_KEY` set so semantic and hybrid search queries use the same model as the stored product vectors. The script keeps product JSON documents and autocomplete suggestions, drops only the search index, updates `$.embedding`, then recreates `idx:disney_products`.
+Expected output from a full run:
+
+```text
+Found 2000 product documents in Redis.
+Embedding model: text-embedding-3-small
+Embedding dimensions: 1536
+Generated embeddings for 2000 / 2000
+Updated Redis JSON for 2000 / 2000
+Recreated idx:disney_products with 2000 indexed products.
+```
+
+After re-embedding Redis, restart the server with `OPENAI_API_KEY` set so semantic and hybrid search queries use the same model as the stored product vectors:
+
+```bash
+npm run dev
+```
+
+If `idx:disney_products` expects 1536-dimension vectors and the server is started without `OPENAI_API_KEY`, semantic and hybrid search will return an error. Fuzzy autocomplete, full-text search, filters/facets, and aggregations do not need OpenAI.
+
+The script keeps product JSON documents and autocomplete suggestions, drops only the search index, updates `$.embedding`, then recreates `idx:disney_products`. Running `npm run seed` later resets the dataset back to the local 32-dimension demo vectors.
+
+Quick checks:
+
+```bash
+curl 'http://localhost:3001/api/health'
+curl 'http://localhost:3001/api/search/semantic?q=warm%20blue%20alien%20plush%20for%20kids&limit=5'
+curl 'http://localhost:3001/api/search?q=space%20robot%20collectible%20display&combine=rrf&limit=5'
+```
 
 ## Redis Cloud deployment
 
