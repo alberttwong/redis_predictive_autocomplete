@@ -3,6 +3,7 @@ import {
   INDEX_NAME,
   PRODUCT_PREFIX,
   SUGGESTION_KEY,
+  VECTOR_DIMENSIONS,
   embedText,
   escapeSearchTerm,
   escapeTag,
@@ -10,14 +11,63 @@ import {
 } from "../scripts/product-utils.js";
 import { embedTextWithOpenAI } from "../scripts/openai-embeddings.js";
 
-export const client = createClient({ url: process.env.REDIS_URL ?? "redis://localhost:6379" });
+export const client = createClient({
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+  socket: {
+    connectTimeout: 10000,
+    reconnectStrategy: false
+  }
+});
 
 client.on("error", (error) => {
   console.error("Redis client error", error);
 });
 
+let connectPromise;
+
 export async function connectRedis() {
-  if (!client.isOpen) await client.connect();
+  if (client.isReady) return;
+  if (!connectPromise) {
+    connectPromise = client.connect().finally(() => {
+      connectPromise = undefined;
+    });
+  }
+  await connectPromise;
+}
+
+const PRODUCT_RETURN_FIELDS = [
+  "$.id",
+  "$.name",
+  "$.description",
+  "$.franchise",
+  "$.character",
+  "$.category",
+  "$.audience",
+  "$.tags",
+  "$.price",
+  "$.rating",
+  "$.popularity"
+];
+
+function returnProductFields(extraFields = []) {
+  const fields = [...extraFields, ...PRODUCT_RETURN_FIELDS];
+  return ["RETURN", String(fields.length), ...fields];
+}
+
+let indexedVectorDimensions;
+
+async function getIndexedVectorDimensions() {
+  if (indexedVectorDimensions) return indexedVectorDimensions;
+
+  const info = await client.sendCommand(["FT.INFO", INDEX_NAME]);
+  const attributesIndex = info.indexOf("attributes");
+  const attributes = attributesIndex >= 0 ? info[attributesIndex + 1] ?? [] : [];
+  const embeddingAttribute = attributes.find((attribute) => attribute.includes("embedding"));
+  const dimensionIndex = embeddingAttribute?.indexOf("dim") ?? -1;
+  indexedVectorDimensions =
+    dimensionIndex >= 0 ? Number(embeddingAttribute[dimensionIndex + 1]) : VECTOR_DIMENSIONS;
+
+  return indexedVectorDimensions;
 }
 
 function parseSuggestionRows(rows) {
@@ -68,8 +118,16 @@ function parseFields(key, fields) {
       Object.assign(record, JSON.parse(value));
       delete record.embedding;
     } else {
-      const normalizedField = field.replace(/^@/, "").replace(/^__/, "");
-      record[normalizedField] = Number.isNaN(Number(value)) ? value : Number(value);
+      const normalizedField = field.replace(/^\$\./, "").replace(/^@/, "").replace(/^__/, "");
+      let parsedValue = value;
+      if (typeof value === "string" && /^[\[{]/.test(value)) {
+        try {
+          parsedValue = JSON.parse(value);
+        } catch {
+          parsedValue = value;
+        }
+      }
+      record[normalizedField] = Number.isNaN(Number(parsedValue)) ? parsedValue : Number(parsedValue);
     }
   }
   return record;
@@ -118,6 +176,14 @@ function buildTextQuery(term, filters) {
 
 async function embedQueryText(text) {
   if (process.env.OPENAI_API_KEY) return embedTextWithOpenAI(text);
+
+  const dimensions = await getIndexedVectorDimensions();
+  if (dimensions !== VECTOR_DIMENSIONS) {
+    throw new Error(
+      `Semantic and hybrid search need OPENAI_API_KEY because ${INDEX_NAME} expects ${dimensions}-dimension vectors. Restart the server with OPENAI_API_KEY set, or rerun npm run seed to restore the local ${VECTOR_DIMENSIONS}-dimension demo vectors.`
+    );
+  }
+
   return embedText(text);
 }
 
@@ -156,8 +222,8 @@ async function hybridSearch(query, vector, filters, combine, limit) {
     "0",
     String(limit),
     "LOAD",
-    "3",
-    "$",
+    String(PRODUCT_RETURN_FIELDS.length + 2),
+    ...PRODUCT_RETURN_FIELDS,
     "@text_score",
     "@vector_score"
   );
@@ -177,13 +243,10 @@ async function fallbackVectorSearch(query, vector, limit) {
     "SORTBY",
     "__vector_score",
     "ASC",
+    ...returnProductFields(["__vector_score"]),
     "LIMIT",
     "0",
     String(limit),
-    "LOAD",
-    "2",
-    "$",
-    "__vector_score",
     "DIALECT",
     "2"
   ]);
@@ -194,12 +257,10 @@ async function fullTextSearch(query, limit) {
     "FT.SEARCH",
     INDEX_NAME,
     query || "*",
+    ...returnProductFields(),
     "LIMIT",
     "0",
     String(limit),
-    "LOAD",
-    "1",
-    "$",
     "DIALECT",
     "2"
   ]);
@@ -217,13 +278,10 @@ async function vectorSearch(vector, limit) {
     "SORTBY",
     "vector_score",
     "ASC",
+    ...returnProductFields(["vector_score"]),
     "LIMIT",
     "0",
     String(limit),
-    "LOAD",
-    "2",
-    "$",
-    "vector_score",
     "DIALECT",
     "2"
   ]);
@@ -333,9 +391,13 @@ export async function facets() {
     "LIMIT",
     "0",
     "2000",
-    "LOAD",
-    "1",
-    "$"
+    "RETURN",
+    "3",
+    "$.category",
+    "$.franchise",
+    "$.audience",
+    "DIALECT",
+    "2"
   ]);
   const { products } = parseSearchRows(rows);
   const unique = (field) => [...new Set(products.map((product) => product[field]).filter(Boolean))].sort();

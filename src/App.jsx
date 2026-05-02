@@ -16,11 +16,19 @@ import {
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const api = async (path, options) => {
-  const response = await fetch(path, options);
+const api = async (path, options = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const signal = options.signal ?? controller.signal;
+
+  try {
+    const response = await fetch(path, { ...options, signal });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error ?? "Request failed");
   return body;
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const searchModes = [

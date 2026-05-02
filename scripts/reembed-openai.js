@@ -178,9 +178,17 @@ async function updateBatch(client, batch) {
 
 export async function reembedOpenAI() {
   const options = parseArgs(process.argv.slice(2));
-  const client = createClient({ url: redisUrl });
+  const client = createClient({
+    url: redisUrl,
+    socket: {
+      connectTimeout: 10000,
+      reconnectStrategy: false
+    }
+  });
   client.on("error", (error) => console.error("Redis client error", error));
+  console.log(`Connecting to Redis at ${new URL(redisUrl).host}...`);
   await client.connect();
+  console.log("Connected to Redis. Loading product documents...");
 
   try {
     const products = await loadProducts(client, options.limit);
