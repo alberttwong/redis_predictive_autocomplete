@@ -59,3 +59,23 @@ This workspace is currently pointed at a non-Flex Redis Cloud database via `.env
 - Verified: `FT.SUGGET`, `FT.SEARCH`, and native `FT.HYBRID` work against the cloud endpoint
 
 The local Docker path still uses `redis:8.6` for current local Redis Open Source testing.
+
+## Delete Redis Cloud resources
+
+The deletion helper defaults to a dry run:
+
+```bash
+REDIS_CLOUD_API_KEY=... REDIS_CLOUD_API_SECRET=... npm run redis-cloud:delete
+```
+
+Delete only the demo database:
+
+```bash
+REDIS_CLOUD_API_KEY=... REDIS_CLOUD_API_SECRET=... npm run redis-cloud:delete -- --target database --execute
+```
+
+Delete the whole non-Flex demo subscription:
+
+```bash
+REDIS_CLOUD_API_KEY=... REDIS_CLOUD_API_SECRET=... npm run redis-cloud:delete -- --target subscription --execute
+```
