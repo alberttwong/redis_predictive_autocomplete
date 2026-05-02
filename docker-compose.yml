@@ -1,0 +1,12 @@
+services:
+  redis:
+    image: redis:8.6
+    container_name: redis-predictive-autocomplete
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
