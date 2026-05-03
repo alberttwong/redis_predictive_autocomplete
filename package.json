@@ -11,6 +11,7 @@
     "embeddings:openai": "node --env-file=.env scripts/reembed-openai.js",
     "redis-cloud:delete": "node scripts/delete-redis-cloud-instance.js",
     "generate:data": "node scripts/generate-data.js",
+    "test": "node --test",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

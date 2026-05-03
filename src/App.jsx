@@ -8,6 +8,7 @@ import {
   ListFilter,
   RotateCcw,
   Search,
+  ScanSearch,
   SlidersHorizontal,
   Sparkles,
   TableProperties,
@@ -49,6 +50,15 @@ const searchModes = [
     endpoint: "/api/search/fulltext",
     command: "/api/search/fulltext?q=stitch%20hoodie&limit=8",
     copy: "Text search over indexed product names and descriptions."
+  },
+  {
+    id: "pattern",
+    label: "Pattern",
+    icon: ScanSearch,
+    example: "itch hood",
+    endpoint: "/api/search/pattern",
+    command: "/api/search/pattern?q=itch%20hood&limit=8",
+    copy: "Exact, prefix, contains, suffix, fuzzy, partial, and multi-word matching."
   },
   {
     id: "semantic",
@@ -176,6 +186,13 @@ function buildRedisCommand(activeMode, query, combine, filters) {
   if (activeMode === "fulltext") {
     return `FT.SEARCH idx:disney_products "${safeQuery}" LIMIT 0 8 LOAD 1 $ DIALECT 2`;
   }
+  if (activeMode === "pattern") {
+    return [
+      "FT.SEARCH idx:disney_products",
+      `"(@name_exact:{${safeQuery}} | (prefix* | @exact_terms:{exact} | @contains_grams:{contains} | @reverse_tokens:xiffus* | %fuzzy%))"`,
+      "LIMIT 0 8 LOAD 1 $ DIALECT 2"
+    ].join("\n");
+  }
   if (activeMode === "semantic") {
     return [
       "FT.SEARCH idx:disney_products",
@@ -294,11 +311,17 @@ function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       runSearch().catch((error) => {
-        if (error.name !== "AbortError") setStatus(error.message);
+        if (error.name === "AbortError") return;
+        setSuggestionResults([]);
+        setAggregateResults([]);
+        setResults([]);
+        setMode(activeSearchMode.label);
+        setWarning(error.message);
+        setStatus("Search failed");
       });
     }, 180);
     return () => clearTimeout(timer);
-  }, [runSearch]);
+  }, [activeSearchMode.label, runSearch]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -508,6 +531,8 @@ function App() {
             "A suggestion dictionary built with product names, character/category phrases, popularity scores, and payloads."}
           {activeMode === "fulltext" &&
             "Text fields like name and description indexed as TEXT, plus TAG and NUMERIC metadata for filtering."}
+          {activeMode === "pattern" &&
+            "Helper fields for exact tokens, full-name exact matches, token n-grams for contains, and reversed tokens for suffix search."}
           {activeMode === "semantic" &&
             "A numeric embedding on every product and a VECTOR HNSW index that can compare query meaning to product meaning."}
           {activeMode === "hybrid" &&

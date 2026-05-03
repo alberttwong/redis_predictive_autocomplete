@@ -7,6 +7,7 @@ import {
   filteredProducts,
   fullTextProducts,
   health,
+  patternProducts,
   searchProducts,
   semanticProducts,
   suggestions
@@ -74,6 +75,15 @@ app.get("/api/search/filters", async (request, response, next) => {
   try {
     await connectRedis();
     response.json(await filteredProducts(request.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/search/pattern", async (request, response, next) => {
+  try {
+    await connectRedis();
+    response.json(await patternProducts(request.query));
   } catch (error) {
     next(error);
   }

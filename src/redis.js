@@ -7,6 +7,8 @@ import {
   embedText,
   escapeSearchTerm,
   escapeTag,
+  normalizeSearchText,
+  searchTokens,
   vectorToBuffer
 } from "../scripts/product-utils.js";
 import { embedTextWithOpenAI } from "../scripts/openai-embeddings.js";
@@ -174,6 +176,49 @@ function buildTextQuery(term, filters) {
   return [filters, text].filter(Boolean).join(" ");
 }
 
+export function buildPatternQuery(term, filters) {
+  const cleanTerm = normalizeSearchText(term);
+  const tokens = searchTokens(term);
+
+  if (!tokens.length) return [filters, "*"].filter(Boolean).join(" ");
+
+  const tokenGroups = tokens.map((token) => {
+    const reversedToken = [...token].reverse().join("");
+    const clauses = [
+      `${token}*`,
+      `@exact_terms:{${escapeTag(token)}}`,
+      `@reverse_tokens:${reversedToken}*`
+    ];
+
+    if (token.length >= 3) {
+      clauses.push(`@contains_grams:{${escapeTag(token)}}`);
+    }
+
+    clauses.push(`%${token}%`);
+
+    return `(${clauses.join(" | ")})`;
+  });
+
+  const exactName = `@name_exact:{${escapeTag(cleanTerm)}}`;
+  const text = `(${exactName} | ${tokenGroups.join(" ")})`;
+
+  return [filters, text].filter(Boolean).join(" ");
+}
+
+export function patternSearchErrorMessage(error) {
+  const message = String(error?.message ?? error);
+  const missingPatternField =
+    message.includes("Unknown field") &&
+    ["name_exact", "exact_terms", "contains_grams", "reverse_tokens"].some((field) => message.includes(field));
+
+  if (!missingPatternField) return message;
+
+  return [
+    "Pattern search needs the updated Redis index with name_exact, exact_terms, contains_grams, and reverse_tokens.",
+    "Click Seed Redis or run npm run seed, then retry the Pattern search."
+  ].join(" ");
+}
+
 async function embedQueryText(text) {
   if (process.env.OPENAI_API_KEY) return embedTextWithOpenAI(text);
 
@@ -322,6 +367,18 @@ export async function filteredProducts(params) {
   const query = buildTextQuery(params.q ?? "", filters);
   const rows = await fullTextSearch(query, limit);
   return { ...parseSearchRows(rows), mode: "FT.SEARCH FILTERS" };
+}
+
+export async function patternProducts(params) {
+  const limit = Number(params.limit ?? 12);
+  const filters = buildFilters(params);
+  const query = buildPatternQuery(params.q ?? "", filters);
+  try {
+    const rows = await fullTextSearch(query, limit);
+    return { ...parseSearchRows(rows), mode: "FT.SEARCH PATTERN" };
+  } catch (error) {
+    throw new Error(patternSearchErrorMessage(error), { cause: error });
+  }
 }
 
 export async function aggregateProducts(params) {

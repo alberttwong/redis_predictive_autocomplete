@@ -3,6 +3,8 @@ import {
   INDEX_NAME,
   PRODUCT_PREFIX,
   SUGGESTION_KEY,
+  createProductIndex,
+  enrichProductForSearch,
   productSearchText
 } from "./product-utils.js";
 import {
@@ -47,82 +49,9 @@ async function dropIndexKeepDocuments(client) {
   try {
     await client.sendCommand(["FT.DROPINDEX", INDEX_NAME]);
   } catch (error) {
-    if (!String(error?.message ?? error).includes("Unknown Index name")) throw error;
+    const message = String(error?.message ?? error);
+    if (!message.includes("Unknown Index name") && !message.includes("no such index")) throw error;
   }
-}
-
-async function createIndex(client, dimensions) {
-  await client.sendCommand([
-    "FT.CREATE",
-    INDEX_NAME,
-    "ON",
-    "JSON",
-    "PREFIX",
-    "1",
-    PRODUCT_PREFIX,
-    "SCHEMA",
-    "$.name",
-    "AS",
-    "name",
-    "TEXT",
-    "WEIGHT",
-    "5.0",
-    "$.description",
-    "AS",
-    "description",
-    "TEXT",
-    "WEIGHT",
-    "1.0",
-    "$.franchise",
-    "AS",
-    "franchise",
-    "TAG",
-    "SORTABLE",
-    "$.character",
-    "AS",
-    "character",
-    "TAG",
-    "$.category",
-    "AS",
-    "category",
-    "TAG",
-    "SORTABLE",
-    "$.audience",
-    "AS",
-    "audience",
-    "TAG",
-    "$.tags[*]",
-    "AS",
-    "tags",
-    "TAG",
-    "$.price",
-    "AS",
-    "price",
-    "NUMERIC",
-    "SORTABLE",
-    "$.rating",
-    "AS",
-    "rating",
-    "NUMERIC",
-    "SORTABLE",
-    "$.popularity",
-    "AS",
-    "popularity",
-    "NUMERIC",
-    "SORTABLE",
-    "$.embedding",
-    "AS",
-    "embedding",
-    "VECTOR",
-    "HNSW",
-    "6",
-    "TYPE",
-    "FLOAT32",
-    "DIM",
-    String(dimensions),
-    "DISTANCE_METRIC",
-    "COSINE"
-  ]);
 }
 
 async function scanProductKeys(client, limit) {
@@ -166,12 +95,11 @@ async function loadProducts(client, limit) {
 async function updateBatch(client, batch) {
   const pipeline = client.multi();
   for (let index = 0; index < batch.length; index += 1) {
-    pipeline.sendCommand([
-      "JSON.SET",
-      batch[index].key,
-      "$.embedding",
-      JSON.stringify(Array.from(batch[index].vector))
-    ]);
+    const product = enrichProductForSearch({
+      ...batch[index].product,
+      embedding: Array.from(batch[index].vector)
+    });
+    pipeline.sendCommand(["JSON.SET", batch[index].key, "$", JSON.stringify(product)]);
   }
   await pipeline.exec();
 }
@@ -224,7 +152,7 @@ export async function reembedOpenAI() {
       console.log(`Updated Redis JSON for ${Math.min(index + batch.length, embeddedProducts.length)} / ${embeddedProducts.length}`);
     }
 
-    await createIndex(client, options.dimensions);
+    await createProductIndex(client, options.dimensions);
     const count = await client.sendCommand(["FT.SEARCH", INDEX_NAME, "*", "LIMIT", "0", "0"]);
     console.log(`Recreated ${INDEX_NAME} with ${Number(count[0] ?? 0)} indexed products.`);
     console.log(`Autocomplete suggestions remain in ${SUGGESTION_KEY}.`);

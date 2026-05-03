@@ -4,10 +4,10 @@ import {
   INDEX_NAME,
   PRODUCT_PREFIX,
   SUGGESTION_KEY,
-  VECTOR_DIMENSIONS,
+  createProductIndex,
   embedText,
+  enrichProductForSearch,
   productSearchText,
-  vectorToBuffer
 } from "./product-utils.js";
 
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
@@ -16,97 +16,30 @@ async function dropIfExists(client, indexName) {
   try {
     await client.sendCommand(["FT.DROPINDEX", indexName, "DD"]);
   } catch (error) {
-    if (!String(error?.message ?? error).includes("Unknown Index name")) throw error;
+    const message = String(error?.message ?? error);
+    if (!message.includes("Unknown Index name") && !message.includes("no such index")) throw error;
   }
 }
 
-async function createIndex(client) {
-  await client.sendCommand([
-    "FT.CREATE",
-    INDEX_NAME,
-    "ON",
-    "JSON",
-    "PREFIX",
-    "1",
-    PRODUCT_PREFIX,
-    "SCHEMA",
-    "$.name",
-    "AS",
-    "name",
-    "TEXT",
-    "WEIGHT",
-    "5.0",
-    "$.description",
-    "AS",
-    "description",
-    "TEXT",
-    "WEIGHT",
-    "1.0",
-    "$.franchise",
-    "AS",
-    "franchise",
-    "TAG",
-    "SORTABLE",
-    "$.character",
-    "AS",
-    "character",
-    "TAG",
-    "$.category",
-    "AS",
-    "category",
-    "TAG",
-    "SORTABLE",
-    "$.audience",
-    "AS",
-    "audience",
-    "TAG",
-    "$.tags[*]",
-    "AS",
-    "tags",
-    "TAG",
-    "$.price",
-    "AS",
-    "price",
-    "NUMERIC",
-    "SORTABLE",
-    "$.rating",
-    "AS",
-    "rating",
-    "NUMERIC",
-    "SORTABLE",
-    "$.popularity",
-    "AS",
-    "popularity",
-    "NUMERIC",
-    "SORTABLE",
-    "$.embedding",
-    "AS",
-    "embedding",
-    "VECTOR",
-    "HNSW",
-    "6",
-    "TYPE",
-    "FLOAT32",
-    "DIM",
-    String(VECTOR_DIMENSIONS),
-    "DISTANCE_METRIC",
-    "COSINE"
-  ]);
-}
-
 export async function seed() {
-  const client = createClient({ url: redisUrl });
+  const client = createClient({
+    url: redisUrl,
+    socket: {
+      connectTimeout: 10000,
+      reconnectStrategy: false
+    }
+  });
   client.on("error", (error) => console.error("Redis client error", error));
   await client.connect();
 
-  const products = buildProducts(2000).map((product) => ({
+  const products = buildProducts(2000).map((product) => enrichProductForSearch({
     ...product,
     embedding: Array.from(embedText(productSearchText(product)))
   }));
 
   await dropIfExists(client, INDEX_NAME);
   await client.del(SUGGESTION_KEY);
-  await createIndex(client);
+  await createProductIndex(client);
 
   const pipeline = client.multi();
   for (const product of products) {

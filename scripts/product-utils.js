@@ -77,6 +77,31 @@ export function escapeSearchTerm(value) {
     .replace(/\s+/g, " ");
 }
 
+export function normalizeSearchText(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function searchTokens(value) {
+  return normalizeSearchText(value).split(" ").filter(Boolean);
+}
+
+function tokenNgrams(token) {
+  const grams = [];
+  if (token.length < 3) return grams;
+
+  for (let start = 0; start < token.length; start += 1) {
+    for (let end = start + 3; end <= token.length; end += 1) {
+      grams.push(token.slice(start, end));
+    }
+  }
+
+  return grams;
+}
+
 export function productSearchText(product) {
   return [
     product.name,
@@ -87,4 +112,115 @@ export function productSearchText(product) {
     product.tags.join(" "),
     product.description
   ].join(" ");
+}
+
+export function productSearchMetadata(product) {
+  const text = productSearchText(product);
+  const tokens = [...new Set(searchTokens(text))];
+
+  return {
+    name_exact: normalizeSearchText(product.name),
+    exact_terms: tokens,
+    contains_grams: [...new Set(tokens.flatMap(tokenNgrams))],
+    reverse_tokens: tokens.map((token) => [...token].reverse().join("")).join(" ")
+  };
+}
+
+export function enrichProductForSearch(product) {
+  return {
+    ...product,
+    ...productSearchMetadata(product)
+  };
+}
+
+export async function createProductIndex(client, dimensions = VECTOR_DIMENSIONS) {
+  await client.sendCommand([
+    "FT.CREATE",
+    INDEX_NAME,
+    "ON",
+    "JSON",
+    "PREFIX",
+    "1",
+    PRODUCT_PREFIX,
+    "SCHEMA",
+    "$.name",
+    "AS",
+    "name",
+    "TEXT",
+    "WEIGHT",
+    "5.0",
+    "$.description",
+    "AS",
+    "description",
+    "TEXT",
+    "WEIGHT",
+    "1.0",
+    "$.name_exact",
+    "AS",
+    "name_exact",
+    "TAG",
+    "$.exact_terms[*]",
+    "AS",
+    "exact_terms",
+    "TAG",
+    "$.contains_grams[*]",
+    "AS",
+    "contains_grams",
+    "TAG",
+    "$.reverse_tokens",
+    "AS",
+    "reverse_tokens",
+    "TEXT",
+    "WEIGHT",
+    "0.2",
+    "$.franchise",
+    "AS",
+    "franchise",
+    "TAG",
+    "SORTABLE",
+    "$.character",
+    "AS",
+    "character",
+    "TAG",
+    "$.category",
+    "AS",
+    "category",
+    "TAG",
+    "SORTABLE",
+    "$.audience",
+    "AS",
+    "audience",
+    "TAG",
+    "$.tags[*]",
+    "AS",
+    "tags",
+    "TAG",
+    "$.price",
+    "AS",
+    "price",
+    "NUMERIC",
+    "SORTABLE",
+    "$.rating",
+    "AS",
+    "rating",
+    "NUMERIC",
+    "SORTABLE",
+    "$.popularity",
+    "AS",
+    "popularity",
+    "NUMERIC",
+    "SORTABLE",
+    "$.embedding",
+    "AS",
+    "embedding",
+    "VECTOR",
+    "HNSW",
+    "6",
+    "TYPE",
+    "FLOAT32",
+    "DIM",
+    String(dimensions),
+    "DISTANCE_METRIC",
+    "COSINE"
+  ]);
 }

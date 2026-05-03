@@ -31,14 +31,16 @@ For the Redis Cloud database in this workspace, `.env` already points `REDIS_URL
 - `idx:disney_products`: Redis JSON search index over `product:*`
 - 2000 Disney-style product documents
 - HNSW FLOAT32 vectors with 32 dimensions
+- helper fields for exact, contains, suffix, prefix, fuzzy, partial, and multi-word pattern search
 - `suggest:disney_products`: autocomplete dictionary with product names and character/category phrases
 
 ## Search modes
 
-The UI at `http://localhost:5173` includes live examples for four Redis search paths:
+The UI at `http://localhost:5173` includes live examples for Redis search paths:
 
 - Fuzzy autocomplete: `/api/suggest?q=stitc&limit=8`
 - Full-text search: `/api/search/fulltext?q=stitch%20hoodie&limit=8`
+- Pattern search: `/api/search/pattern?q=itch%20hood&limit=8`
 - Semantic vector search: `/api/search/semantic?q=space%20robot%20collectible%20display&limit=8`
 - Hybrid search: `/api/search?q=ocean%20adventure%20kids%20toy&combine=rrf&limit=8`
 - Filters and facets: `/api/search/filters?q=classic&category=Toy&minPrice=20&maxPrice=60&limit=8`
@@ -88,6 +90,14 @@ npm run dev
 ```
 
 If `idx:disney_products` expects 1536-dimension vectors and the server is started without `OPENAI_API_KEY`, semantic and hybrid search will return an error. Fuzzy autocomplete, full-text search, filters/facets, and aggregations do not need OpenAI.
+
+Pattern search uses regular Redis Query Engine fields plus generated helper fields:
+
+- prefix and fuzzy clauses over the normal `TEXT` fields
+- `name_exact` and `exact_terms` `TAG` fields for exact matching
+- `contains_grams` `TAG` n-grams for infix and partial-word matching
+- `reverse_tokens` `TEXT` values for suffix matching
+- one required match group per query token for multi-word search
 
 The script keeps product JSON documents and autocomplete suggestions, drops only the search index, updates `$.embedding`, then recreates `idx:disney_products`. Running `npm run seed` later resets the dataset back to the local 32-dimension demo vectors.
 
