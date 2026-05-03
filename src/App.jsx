@@ -296,7 +296,7 @@ function App() {
     setResults(data.products);
     setMode(data.mode);
     setWarning(data.warning ?? "");
-    setStatus(`${data.total} matches`);
+    setStatus(`Showing ${data.products.length} of ${data.total} matches`);
   }, [activeMode, activeSearchMode.endpoint, searchParams]);
 
   useEffect(() => {
