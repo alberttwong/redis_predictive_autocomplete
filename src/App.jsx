@@ -477,7 +477,7 @@ function App() {
           {activeMode === "fulltext" &&
             "Text fields like name and description indexed as TEXT, plus TAG and NUMERIC metadata for filtering."}
           {activeMode === "pattern" &&
-            "Helper fields for exact tokens, full-name exact matches, token n-grams for contains, and reversed tokens for suffix search."}
+            "Suffix-trie TEXT fields plus exact TAG helpers for prefix, contains, suffix, fuzzy, partial, and multi-word matching."}
           {activeMode === "semantic" &&
             "A numeric embedding on every product and a VECTOR HNSW index that can compare query meaning to product meaning."}
           {activeMode === "hybrid" &&

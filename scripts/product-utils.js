@@ -89,19 +89,6 @@ export function searchTokens(value) {
   return normalizeSearchText(value).split(" ").filter(Boolean);
 }
 
-function tokenNgrams(token) {
-  const grams = [];
-  if (token.length < 3) return grams;
-
-  for (let start = 0; start < token.length; start += 1) {
-    for (let end = start + 3; end <= token.length; end += 1) {
-      grams.push(token.slice(start, end));
-    }
-  }
-
-  return grams;
-}
-
 export function productSearchText(product) {
   return [
     product.name,
@@ -120,16 +107,22 @@ export function productSearchMetadata(product) {
 
   return {
     name_exact: normalizeSearchText(product.name),
-    exact_terms: tokens,
-    contains_grams: [...new Set(tokens.flatMap(tokenNgrams))],
-    reverse_tokens: tokens.map((token) => [...token].reverse().join("")).join(" ")
+    exact_terms: tokens
   };
 }
 
 export function enrichProductForSearch(product) {
+  const {
+    contains_grams: _legacyContainsGrams,
+    reverse_tokens: _legacyReverseTokens,
+    exact_terms: _legacyExactTerms,
+    name_exact: _legacyNameExact,
+    ...baseProduct
+  } = product;
+
   return {
-    ...product,
-    ...productSearchMetadata(product)
+    ...baseProduct,
+    ...productSearchMetadata(baseProduct)
   };
 }
 
@@ -149,12 +142,14 @@ export async function createProductIndex(client, dimensions = VECTOR_DIMENSIONS)
     "TEXT",
     "WEIGHT",
     "5.0",
+    "WITHSUFFIXTRIE",
     "$.description",
     "AS",
     "description",
     "TEXT",
     "WEIGHT",
     "1.0",
+    "WITHSUFFIXTRIE",
     "$.name_exact",
     "AS",
     "name_exact",
@@ -163,16 +158,6 @@ export async function createProductIndex(client, dimensions = VECTOR_DIMENSIONS)
     "AS",
     "exact_terms",
     "TAG",
-    "$.contains_grams[*]",
-    "AS",
-    "contains_grams",
-    "TAG",
-    "$.reverse_tokens",
-    "AS",
-    "reverse_tokens",
-    "TEXT",
-    "WEIGHT",
-    "0.2",
     "$.franchise",
     "AS",
     "franchise",

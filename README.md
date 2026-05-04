@@ -93,10 +93,8 @@ If `idx:disney_products` expects 1536-dimension vectors and the server is starte
 
 Pattern search uses regular Redis Query Engine fields plus generated helper fields:
 
-- prefix and fuzzy clauses over the normal `TEXT` fields
+- prefix, fuzzy, contains, and suffix clauses over normal `TEXT` fields with `WITHSUFFIXTRIE`
 - `name_exact` and `exact_terms` `TAG` fields for exact matching
-- `contains_grams` `TAG` n-grams for infix and partial-word matching
-- `reverse_tokens` `TEXT` values for suffix matching
 - one required match group per query token for multi-word search
 
 The script keeps product JSON documents and autocomplete suggestions, drops only the search index, updates `$.embedding`, then recreates `idx:disney_products`. Running `npm run seed` later resets the dataset back to the local 32-dimension demo vectors.

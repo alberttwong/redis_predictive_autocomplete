@@ -154,12 +154,12 @@ export function patternSearchErrorMessage(error) {
   const message = String(error?.message ?? error);
   const missingPatternField =
     message.includes("Unknown field") &&
-    ["name_exact", "exact_terms", "contains_grams", "reverse_tokens"].some((field) => message.includes(field));
+    ["name_exact", "exact_terms"].some((field) => message.includes(field));
 
   if (!missingPatternField) return message;
 
   return [
-    "Pattern search needs the updated Redis index with name_exact, exact_terms, contains_grams, and reverse_tokens.",
+    "Pattern search needs the updated Redis index with name_exact, exact_terms, and suffix-trie TEXT fields.",
     "Click Seed Redis or run npm run seed, then retry the Pattern search."
   ].join(" ");
 }

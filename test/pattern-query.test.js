@@ -13,16 +13,17 @@ test("builds exact, prefix, suffix, contains, fuzzy, partial, and multi-word cla
   const query = buildPatternQuery("itch hood", "");
 
   assert.ok(query.startsWith("(@name_exact:{itch\\ hood} | "));
-  assert.match(query, /\(itch\* \| @exact_terms:\{itch\} \| @reverse_tokens:hcti\* \| @contains_grams:\{itch\} \| %itch%\)/);
-  assert.match(query, /\(hood\* \| @exact_terms:\{hood\} \| @reverse_tokens:dooh\* \| @contains_grams:\{hood\} \| %hood%\)/);
+  assert.match(query, /\(itch\* \| @exact_terms:\{itch\} \| w'\*itch\*' \| w'\*itch' \| %itch%\)/);
+  assert.match(query, /\(hood\* \| @exact_terms:\{hood\} \| w'\*hood\*' \| w'\*hood' \| %hood%\)/);
   assert.ok(query.includes(") ("));
 });
 
-test("skips n-gram contains clauses for tokens shorter than three characters", () => {
+test("uses wildcard contains clauses for short tokens without stored n-grams", () => {
   const query = buildPatternQuery("up", "");
 
-  assert.match(query, /\(up\* \| @exact_terms:\{up\} \| @reverse_tokens:pu\* \| %up%\)/);
+  assert.match(query, /\(up\* \| @exact_terms:\{up\} \| w'\*up\*' \| w'\*up' \| %up%\)/);
   assert.doesNotMatch(query, /@contains_grams:\{up\}/);
+  assert.doesNotMatch(query, /@reverse_tokens/);
 });
 
 test("prepends filters while preserving pattern matching", () => {
@@ -51,7 +52,7 @@ test("builds a pasteable redis-cli pattern command from the real query", () => {
 
   assert.equal(
     command,
-    'FT.SEARCH idx:disney_products "(@name_exact:{itch\\\\ hood} | (itch* | @exact_terms:{itch} | @reverse_tokens:hcti* | @contains_grams:{itch} | %itch%) (hood* | @exact_terms:{hood} | @reverse_tokens:dooh* | @contains_grams:{hood} | %hood%))" LIMIT 0 8 LOAD 1 $ DIALECT 2'
+    'FT.SEARCH idx:disney_products "(@name_exact:{itch\\\\ hood} | (itch* | @exact_terms:{itch} | w\'*itch*\' | w\'*itch\' | %itch%) (hood* | @exact_terms:{hood} | w\'*hood*\' | w\'*hood\' | %hood%))" LIMIT 0 8 LOAD 1 $ DIALECT 2'
   );
 });
 
@@ -63,7 +64,7 @@ test("explains stale indexes that are missing pattern-search fields", () => {
 });
 
 test("preserves unrelated Redis search errors", () => {
-  const message = patternSearchErrorMessage(new Error("Syntax error at offset 18 near exact_terms"));
+  const message = patternSearchErrorMessage(new Error("Syntax error at offset 18 near wildcard"));
 
-  assert.equal(message, "Syntax error at offset 18 near exact_terms");
+  assert.equal(message, "Syntax error at offset 18 near wildcard");
 });

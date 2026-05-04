@@ -30,16 +30,12 @@ export function buildPatternQuery(term, filters) {
   if (!tokens.length) return [filters, "*"].filter(Boolean).join(" ");
 
   const tokenGroups = tokens.map((token) => {
-    const reversedToken = [...token].reverse().join("");
     const clauses = [
       `${token}*`,
       `@exact_terms:{${escapeTag(token)}}`,
-      `@reverse_tokens:${reversedToken}*`
+      `w'*${token}*'`,
+      `w'*${token}'`
     ];
-
-    if (token.length >= 3) {
-      clauses.push(`@contains_grams:{${escapeTag(token)}}`);
-    }
 
     clauses.push(`%${token}%`);
 
