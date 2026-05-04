@@ -165,16 +165,23 @@ export function patternSearchErrorMessage(error) {
 }
 
 async function embedQueryText(text) {
-  if (process.env.OPENAI_API_KEY) return embedTextWithOpenAI(text);
-
   const dimensions = await getIndexedVectorDimensions();
-  if (dimensions !== VECTOR_DIMENSIONS) {
+  if (dimensions === VECTOR_DIMENSIONS) return embedText(text);
+
+  if (!process.env.OPENAI_API_KEY) {
     throw new Error(
       `Semantic and hybrid search need OPENAI_API_KEY because ${INDEX_NAME} expects ${dimensions}-dimension vectors. Restart the server with OPENAI_API_KEY set, or rerun npm run seed to restore the local ${VECTOR_DIMENSIONS}-dimension demo vectors.`
     );
   }
 
-  return embedText(text);
+  const vector = await embedTextWithOpenAI(text);
+  if (vector.length !== dimensions) {
+    throw new Error(
+      `Semantic and hybrid search generated ${vector.length}-dimension vectors, but ${INDEX_NAME} expects ${dimensions}. Re-embed Redis with the same OpenAI model, or rerun npm run seed to restore the local ${VECTOR_DIMENSIONS}-dimension demo vectors.`
+    );
+  }
+
+  return vector;
 }
 
 async function hybridSearch(query, vector, filters, combine, limit) {
