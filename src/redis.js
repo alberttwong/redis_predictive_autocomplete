@@ -5,13 +5,10 @@ import {
   SUGGESTION_KEY,
   VECTOR_DIMENSIONS,
   embedText,
-  escapeSearchTerm,
-  escapeTag,
-  normalizeSearchText,
-  searchTokens,
   vectorToBuffer
 } from "../scripts/product-utils.js";
 import { embedTextWithOpenAI } from "../scripts/openai-embeddings.js";
+import { buildFilters, buildPatternQuery, buildTextQuery } from "./search-query.js";
 
 export const client = createClient({
   url: process.env.REDIS_URL ?? "redis://localhost:6379",
@@ -151,58 +148,6 @@ function parseAggregateRows(rows) {
   }
 
   return { total, groups };
-}
-
-function buildFilters({ category, franchise, audience, minPrice, maxPrice }) {
-  const filters = [];
-  if (category) filters.push(`@category:{${escapeTag(category)}}`);
-  if (franchise) filters.push(`@franchise:{${escapeTag(franchise)}}`);
-  if (audience) filters.push(`@audience:{${escapeTag(audience)}}`);
-  if (minPrice || maxPrice) {
-    filters.push(`@price:[${minPrice || "-inf"} ${maxPrice || "+inf"}]`);
-  }
-  return filters.join(" ");
-}
-
-function buildTextQuery(term, filters) {
-  const cleanTerm = escapeSearchTerm(term);
-  const text = cleanTerm
-    ? cleanTerm
-        .split(" ")
-        .filter(Boolean)
-        .map((token) => `%${token}% | ${token}*`)
-        .join(" ")
-    : "*";
-  return [filters, text].filter(Boolean).join(" ");
-}
-
-export function buildPatternQuery(term, filters) {
-  const cleanTerm = normalizeSearchText(term);
-  const tokens = searchTokens(term);
-
-  if (!tokens.length) return [filters, "*"].filter(Boolean).join(" ");
-
-  const tokenGroups = tokens.map((token) => {
-    const reversedToken = [...token].reverse().join("");
-    const clauses = [
-      `${token}*`,
-      `@exact_terms:{${escapeTag(token)}}`,
-      `@reverse_tokens:${reversedToken}*`
-    ];
-
-    if (token.length >= 3) {
-      clauses.push(`@contains_grams:{${escapeTag(token)}}`);
-    }
-
-    clauses.push(`%${token}%`);
-
-    return `(${clauses.join(" | ")})`;
-  });
-
-  const exactName = `@name_exact:{${escapeTag(cleanTerm)}}`;
-  const text = `(${exactName} | ${tokenGroups.join(" ")})`;
-
-  return [filters, text].filter(Boolean).join(" ");
 }
 
 export function patternSearchErrorMessage(error) {

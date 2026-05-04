@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildPatternQuery, patternSearchErrorMessage } from "../src/redis.js";
+import { buildRedisCommand } from "../src/redis-command.js";
+import { patternSearchErrorMessage } from "../src/redis.js";
+import { buildPatternQuery } from "../src/search-query.js";
 
 test("builds a wildcard query for blank pattern searches", () => {
   assert.equal(buildPatternQuery("", ""), "*");
@@ -38,6 +40,19 @@ test("escapes exact tag values in generated pattern clauses", () => {
   assert.match(query, /@name_exact:\{lilo\\ stitch\}/);
   assert.match(query, /@exact_terms:\{lilo\}/);
   assert.match(query, /@exact_terms:\{stitch\}/);
+});
+
+test("builds a pasteable redis-cli pattern command from the real query", () => {
+  const command = buildRedisCommand("pattern", "itch hood", "rrf", {
+    category: "",
+    minPrice: "",
+    maxPrice: ""
+  });
+
+  assert.equal(
+    command,
+    'FT.SEARCH idx:disney_products "(@name_exact:{itch\\\\ hood} | (itch* | @exact_terms:{itch} | @reverse_tokens:hcti* | @contains_grams:{itch} | %itch%) (hood* | @exact_terms:{hood} | @reverse_tokens:dooh* | @contains_grams:{hood} | %hood%))" LIMIT 0 8 LOAD 1 $ DIALECT 2'
+  );
 });
 
 test("explains stale indexes that are missing pattern-search fields", () => {

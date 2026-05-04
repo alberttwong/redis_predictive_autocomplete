@@ -15,6 +15,7 @@ import {
   WandSparkles
 } from "lucide-react";
 import { createRoot } from "react-dom/client";
+import { buildRedisCommand } from "./redis-command.js";
 import "./styles.css";
 
 const api = async (path, options = {}) => {
@@ -173,62 +174,6 @@ function Select({ label, value, options, onChange }) {
       </select>
     </label>
   );
-}
-
-function buildRedisCommand(activeMode, query, combine, filters) {
-  const safeQuery = query.trim() || "*";
-  const categoryFilter = filters.category || "Toy";
-  const minPriceFilter = filters.minPrice || "20";
-  const maxPriceFilter = filters.maxPrice || "60";
-  if (activeMode === "fuzzy") {
-    return `FT.SUGGET suggest:disney_products "${safeQuery}" FUZZY MAX 8 WITHPAYLOADS`;
-  }
-  if (activeMode === "fulltext") {
-    return `FT.SEARCH idx:disney_products "${safeQuery}" LIMIT 0 8 LOAD 1 $ DIALECT 2`;
-  }
-  if (activeMode === "pattern") {
-    return [
-      "FT.SEARCH idx:disney_products",
-      `"(@name_exact:{${safeQuery}} | (prefix* | @exact_terms:{exact} | @contains_grams:{contains} | @reverse_tokens:xiffus* | %fuzzy%))"`,
-      "LIMIT 0 8 LOAD 1 $ DIALECT 2"
-    ].join("\n");
-  }
-  if (activeMode === "semantic") {
-    return [
-      "FT.SEARCH idx:disney_products",
-      `"*=>[KNN 8 @embedding $vector AS vector_score]"`,
-      "PARAMS 2 vector <query_embedding_float32_blob>",
-      "SORTBY vector_score ASC",
-      "LIMIT 0 8 LOAD 2 $ vector_score DIALECT 2"
-    ].join("\n");
-  }
-  if (activeMode === "filters") {
-    return [
-      "FT.SEARCH idx:disney_products",
-      `"${safeQuery}"`,
-      `@category:{${categoryFilter}} @price:[${minPriceFilter} ${maxPriceFilter}]`,
-      "LIMIT 0 8 LOAD 1 $ DIALECT 2"
-    ].join("\n");
-  }
-  if (activeMode === "aggregate") {
-    return [
-      "FT.AGGREGATE idx:disney_products",
-      `"${safeQuery}"`,
-      "GROUPBY 1 @category",
-      "REDUCE COUNT 0 AS products",
-      "REDUCE AVG 1 @price AS avg_price",
-      "REDUCE MAX 1 @popularity AS top_popularity",
-      "SORTBY 2 @products DESC LIMIT 0 8 DIALECT 2"
-    ].join("\n");
-  }
-  return [
-    "FT.HYBRID idx:disney_products",
-    `SEARCH "${safeQuery}" YIELD_SCORE_AS text_score`,
-    "VSIM @embedding $vector KNN 2 K 8 YIELD_SCORE_AS vector_score",
-    combine === "linear" ? "COMBINE LINEAR 4 ALPHA 0.65 BETA 0.35" : "COMBINE RRF 2 CONSTANT 60",
-    "LIMIT 0 8 LOAD 3 $ @text_score @vector_score",
-    "PARAMS 2 vector <query_embedding_float32_blob>"
-  ].join("\n");
 }
 
 function App() {
