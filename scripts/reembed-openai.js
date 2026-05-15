@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 import {
   INDEX_NAME,
+  LOCALES,
   PRODUCT_PREFIX,
   SUGGESTION_KEY,
   createProductIndex,
@@ -104,6 +105,10 @@ async function updateBatch(client, batch) {
   await pipeline.exec();
 }
 
+function multilingualProductSearchText(product) {
+  return Object.keys(LOCALES).map((locale) => productSearchText(product, locale)).join(" ");
+}
+
 export async function reembedOpenAI() {
   const options = parseArgs(process.argv.slice(2));
   const client = createClient({
@@ -127,7 +132,7 @@ export async function reembedOpenAI() {
     if (options.dryRun) {
       console.log("Dry run only. No embeddings, JSON documents, or indexes were changed.");
       for (const { key, product } of products.slice(0, 3)) {
-        console.log(`${key}: ${productSearchText(product)}`);
+        console.log(`${key}: ${multilingualProductSearchText(product)}`);
       }
       return { count: products.length, dryRun: true };
     }
@@ -136,7 +141,7 @@ export async function reembedOpenAI() {
 
     for (let index = 0; index < products.length; index += options.batchSize) {
       const batch = products.slice(index, index + options.batchSize);
-      const texts = batch.map(({ product }) => productSearchText(product));
+      const texts = batch.map(({ product }) => multilingualProductSearchText(product));
       const vectors = await embedTextsWithOpenAI(texts, { dimensions: options.dimensions });
       for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
         embeddedProducts.push({ ...batch[batchIndex], vector: vectors[batchIndex] });

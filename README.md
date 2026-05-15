@@ -31,8 +31,9 @@ For the Redis Cloud database in this workspace, `.env` already points `REDIS_URL
 - `idx:disney_products`: Redis JSON search index over `product:*`
 - 2000 Disney-style product documents
 - HNSW FLOAT32 vectors with 32 dimensions
-- helper fields for exact, contains, suffix, prefix, fuzzy, partial, and multi-word pattern search
-- `suggest:disney_products`: autocomplete dictionary with product names and character/category phrases
+- English, Spanish, French, and Chinese product name/description fields
+- helper fields for exact, contains, suffix, prefix, fuzzy, partial, and multi-word pattern search per language
+- locale-specific autocomplete dictionaries with product names and character/category phrases
 
 ## Search modes
 
@@ -45,6 +46,17 @@ The UI at `http://localhost:5173` includes live examples for Redis search paths:
 - Hybrid search: `/api/search?q=ocean%20adventure%20kids%20toy&combine=rrf&limit=8`
 - Filters and facets: `/api/search/filters?q=classic&category=Toy&minPrice=20&maxPrice=60&limit=8`
 - Aggregations: `/api/search/aggregate?q=classic`
+
+All text-oriented endpoints accept `locale` or `lang` values of `en`, `es`, `fr`, or `zh`:
+
+```bash
+curl 'http://localhost:3001/api/suggest?q=史迪奇&locale=zh&limit=5'
+curl 'http://localhost:3001/api/search/fulltext?q=camiseta%20stitch&locale=es&limit=5'
+curl 'http://localhost:3001/api/search/pattern?q=figurine%20vinyle&locale=fr&limit=5'
+curl 'http://localhost:3001/api/search?q=蓝色%20儿童%20毛绒玩具&locale=zh&combine=rrf&limit=5'
+```
+
+Run `npm run seed` after pulling multilingual search changes so Redis recreates `idx:disney_products` with the localized `TEXT` and helper fields plus `suggest:disney_products:es`, `suggest:disney_products:fr`, and `suggest:disney_products:zh`.
 
 You can also write the generated sample set to disk:
 

@@ -25,12 +25,15 @@ const sampleProduct = {
 test("normalizes search text for exact and token matching", () => {
   assert.equal(normalizeSearchText("  Lilo & Stitch: Hoodie!  "), "lilo stitch hoodie");
   assert.deepEqual(searchTokens("Classic Stitch Hoodie"), ["classic", "stitch", "hoodie"]);
+  assert.deepEqual(searchTokens("Clásico Stitch camiseta gráfica", "es"), ["clásico", "stitch", "camiseta", "gráfica"]);
+  assert.ok(searchTokens("经典史迪奇毛绒玩具", "zh").length > 0);
 });
 
 test("builds pattern-search metadata without storing n-grams", () => {
   const metadata = productSearchMetadata(sampleProduct);
 
   assert.equal(metadata.name_exact, "classic stitch hoodie");
+  assert.equal(metadata.name_exact_es, "classic stitch hoodie");
   assert.ok(metadata.exact_terms.includes("stitch"));
   assert.ok(metadata.exact_terms.includes("hoodie"));
   assert.equal("contains_grams" in metadata, false);
@@ -69,9 +72,15 @@ test("creates an index with pattern-search helper fields", async () => {
   assert.ok(command.includes("name_exact"));
   assert.ok(command.includes("$.exact_terms[*]"));
   assert.ok(command.includes("exact_terms"));
+  assert.ok(command.includes("$.name_es"));
+  assert.ok(command.includes("name_es"));
+  assert.ok(command.includes("$.description_fr"));
+  assert.ok(command.includes("description_fr"));
+  assert.ok(command.includes("$.exact_terms_zh[*]"));
+  assert.ok(command.includes("exact_terms_zh"));
   assert.equal(command.includes("$.contains_grams[*]"), false);
   assert.equal(command.includes("contains_grams"), false);
   assert.equal(command.includes("$.reverse_tokens"), false);
   assert.equal(command.includes("reverse_tokens"), false);
-  assert.equal(command.filter((part) => part === "WITHSUFFIXTRIE").length, 2);
+  assert.equal(command.filter((part) => part === "WITHSUFFIXTRIE").length, 8);
 });

@@ -2,9 +2,12 @@ import { createClient } from "redis";
 import {
   INDEX_NAME,
   PRODUCT_PREFIX,
-  SUGGESTION_KEY,
   VECTOR_DIMENSIONS,
   embedText,
+  localeConfig,
+  localizedField,
+  normalizeLocale,
+  suggestionKeyForLocale,
   vectorToBuffer
 } from "../scripts/product-utils.js";
 import { embedTextWithOpenAI } from "../scripts/openai-embeddings.js";
@@ -43,6 +46,12 @@ const PRODUCT_RETURN_FIELDS = [
   "$.category",
   "$.audience",
   "$.tags",
+  "$.name_es",
+  "$.description_es",
+  "$.name_fr",
+  "$.description_fr",
+  "$.name_zh",
+  "$.description_zh",
   "$.price",
   "$.rating",
   "$.popularity"
@@ -130,6 +139,29 @@ function parseFields(key, fields) {
     }
   }
   return record;
+}
+
+function localizeProduct(product, locale = "en") {
+  const normalized = normalizeLocale(locale);
+  const nameField = localizedField("name", normalized);
+  const descriptionField = localizedField("description", normalized);
+
+  if (normalized === "en") return product;
+
+  return {
+    ...product,
+    name: product[nameField] ?? product.name,
+    description: product[descriptionField] ?? product.description,
+    locale: normalized
+  };
+}
+
+function localizeSearchResult(result, locale = "en") {
+  return {
+    ...result,
+    locale: normalizeLocale(locale),
+    products: result.products?.map((product) => localizeProduct(product, locale)) ?? []
+  };
 }
 
 function parseAggregateRows(rows) {
@@ -249,11 +281,14 @@ async function fallbackVectorSearch(query, vector, limit) {
   ]);
 }
 
-async function fullTextSearch(query, limit) {
+async function fullTextSearch(query, limit, locale = "en") {
+  const language = localeConfig(locale).redisLanguage;
   return client.sendCommand([
     "FT.SEARCH",
     INDEX_NAME,
     query || "*",
+    "LANGUAGE",
+    language,
     ...returnProductFields(),
     "LIMIT",
     "0",
@@ -284,11 +319,12 @@ async function vectorSearch(vector, limit) {
   ]);
 }
 
-export async function suggestions(term, limit = 8) {
+export async function suggestions(term, limit = 8, requestedLocale = "en") {
   if (!term?.trim()) return [];
+  const locale = normalizeLocale(requestedLocale);
   const rows = await client.sendCommand([
     "FT.SUGGET",
-    SUGGESTION_KEY,
+    suggestionKeyForLocale(locale),
     term.trim(),
     "FUZZY",
     "MAX",
@@ -300,42 +336,47 @@ export async function suggestions(term, limit = 8) {
 
 export async function fullTextProducts(params) {
   const limit = Number(params.limit ?? 12);
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const filters = buildFilters(params);
-  const query = buildTextQuery(params.q ?? "", filters);
-  const rows = await fullTextSearch(query, limit);
-  return { ...parseSearchRows(rows), mode: "FT.SEARCH TEXT" };
+  const query = buildTextQuery(params.q ?? "", filters, locale);
+  const rows = await fullTextSearch(query, limit, locale);
+  return { ...localizeSearchResult(parseSearchRows(rows), locale), mode: "FT.SEARCH TEXT" };
 }
 
 export async function semanticProducts(params) {
   const limit = Number(params.limit ?? 12);
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const vector = await embedQueryText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
   const rows = await vectorSearch(vector, limit);
-  return { ...parseSearchRows(rows), mode: "FT.SEARCH VECTOR KNN" };
+  return { ...localizeSearchResult(parseSearchRows(rows), locale), mode: "FT.SEARCH VECTOR KNN" };
 }
 
 export async function filteredProducts(params) {
   const limit = Number(params.limit ?? 12);
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const filters = buildFilters(params);
-  const query = buildTextQuery(params.q ?? "", filters);
-  const rows = await fullTextSearch(query, limit);
-  return { ...parseSearchRows(rows), mode: "FT.SEARCH FILTERS" };
+  const query = buildTextQuery(params.q ?? "", filters, locale);
+  const rows = await fullTextSearch(query, limit, locale);
+  return { ...localizeSearchResult(parseSearchRows(rows), locale), mode: "FT.SEARCH FILTERS" };
 }
 
 export async function patternProducts(params) {
   const limit = Number(params.limit ?? 12);
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const filters = buildFilters(params);
-  const query = buildPatternQuery(params.q ?? "", filters);
+  const query = buildPatternQuery(params.q ?? "", filters, locale);
   try {
-    const rows = await fullTextSearch(query, limit);
-    return { ...parseSearchRows(rows), mode: "FT.SEARCH PATTERN" };
+    const rows = await fullTextSearch(query, limit, locale);
+    return { ...localizeSearchResult(parseSearchRows(rows), locale), mode: "FT.SEARCH PATTERN" };
   } catch (error) {
     throw new Error(patternSearchErrorMessage(error), { cause: error });
   }
 }
 
 export async function aggregateProducts(params) {
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const filters = buildFilters(params);
-  const query = buildTextQuery(params.q ?? "", filters);
+  const query = buildTextQuery(params.q ?? "", filters, locale);
   const rows = await client.sendCommand([
     "FT.AGGREGATE",
     INDEX_NAME,
@@ -375,17 +416,21 @@ export async function aggregateProducts(params) {
 
 export async function searchProducts(params) {
   const limit = Number(params.limit ?? 12);
+  const locale = normalizeLocale(params.locale ?? params.lang);
   const filters = buildFilters(params);
-  const query = buildTextQuery(params.q ?? "", filters);
+  const query = buildTextQuery(params.q ?? "", filters, locale);
   const vector = await embedQueryText(`${params.q ?? ""} ${params.category ?? ""} ${params.franchise ?? ""}`);
 
   try {
     const rows = await hybridSearch(query, vector, filters, params.combine, limit);
-    return { ...parseSearchRows(rows), mode: `FT.HYBRID ${params.combine === "linear" ? "LINEAR" : "RRF"}` };
+    return {
+      ...localizeSearchResult(parseSearchRows(rows), locale),
+      mode: `FT.HYBRID ${params.combine === "linear" ? "LINEAR" : "RRF"}`
+    };
   } catch (error) {
     const rows = await fallbackVectorSearch(query, vector, limit);
     return {
-      ...parseSearchRows(rows),
+      ...localizeSearchResult(parseSearchRows(rows), locale),
       mode: "FT.SEARCH KNN fallback",
       warning: String(error?.message ?? error)
     };

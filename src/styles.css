@@ -195,6 +195,44 @@ h1 {
   white-space: nowrap;
 }
 
+.language-examples {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.language-examples button {
+  border: 1px solid #bfb7a8;
+  border-radius: 7px;
+  background: #fffdf7;
+  min-height: 58px;
+  padding: 9px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.language-examples button.selected {
+  border-color: #17201b;
+  background: #f1ead8;
+}
+
+.language-examples span {
+  font-size: 11px;
+  color: #59675f;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.language-examples strong {
+  color: #17201b;
+  font-size: 15px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 .control-band {
   margin-top: 34px;
   padding: 18px 0;
@@ -212,7 +250,7 @@ h1 {
 
 .controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr)) 90px 90px auto;
+  grid-template-columns: minmax(120px, 0.8fr) repeat(3, minmax(140px, 1fr)) 90px 90px auto;
   gap: 12px;
   align-items: end;
 }
@@ -521,6 +559,10 @@ h1 {
   .controls {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
   }
+
+  .language-examples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 680px) {
@@ -543,6 +585,10 @@ h1 {
   }
 
   .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .language-examples {
     grid-template-columns: 1fr;
   }
 

@@ -38,7 +38,13 @@ app.post("/api/seed", async (_request, response, next) => {
 app.get("/api/suggest", async (request, response, next) => {
   try {
     await connectRedis();
-    response.json({ suggestions: await suggestions(String(request.query.q ?? ""), Number(request.query.limit ?? 8)) });
+    response.json({
+      suggestions: await suggestions(
+        String(request.query.q ?? ""),
+        Number(request.query.limit ?? 8),
+        request.query.locale ?? request.query.lang
+      )
+    });
   } catch (error) {
     next(error);
   }

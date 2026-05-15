@@ -2,12 +2,13 @@ import { createClient } from "redis";
 import { buildProducts } from "./generate-data.js";
 import {
   INDEX_NAME,
+  LOCALES,
   PRODUCT_PREFIX,
-  SUGGESTION_KEY,
   createProductIndex,
   embedText,
   enrichProductForSearch,
   productSearchText,
+  suggestionKeyForLocale,
 } from "./product-utils.js";
 
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
@@ -32,34 +33,42 @@ export async function seed() {
   client.on("error", (error) => console.error("Redis client error", error));
   await client.connect();
 
-  const products = buildProducts(2000).map((product) => enrichProductForSearch({
-    ...product,
-    embedding: Array.from(embedText(productSearchText(product)))
-  }));
+  const products = buildProducts(2000).map((product) => {
+    const multilingualText = Object.keys(LOCALES).map((locale) => productSearchText(product, locale)).join(" ");
+    return enrichProductForSearch({
+      ...product,
+      embedding: Array.from(embedText(multilingualText))
+    });
+  });
 
   await dropIfExists(client, INDEX_NAME);
-  await client.del(SUGGESTION_KEY);
+  await client.del(Object.keys(LOCALES).map((locale) => suggestionKeyForLocale(locale)));
   await createProductIndex(client);
 
   const pipeline = client.multi();
   for (const product of products) {
     pipeline.json.set(`${PRODUCT_PREFIX}${product.id}`, "$", product);
-    pipeline.sendCommand([
-      "FT.SUGADD",
-      SUGGESTION_KEY,
-      product.name,
-      String(product.popularity),
-      "PAYLOAD",
-      JSON.stringify({ id: product.id, category: product.category, franchise: product.franchise })
-    ]);
-    pipeline.sendCommand([
-      "FT.SUGADD",
-      SUGGESTION_KEY,
-      `${product.character} ${product.category}`,
-      String(Math.max(1, product.popularity - 10)),
-      "PAYLOAD",
-      JSON.stringify({ id: product.id, category: product.category, franchise: product.franchise })
-    ]);
+    for (const locale of Object.keys(LOCALES)) {
+      const nameField = locale === "en" ? "name" : `name_${locale}`;
+      const characterField = locale === "en" ? "character" : `character_${locale}`;
+      const categoryField = locale === "en" ? "category" : `category_${locale}`;
+      pipeline.sendCommand([
+        "FT.SUGADD",
+        suggestionKeyForLocale(locale),
+        product[nameField],
+        String(product.popularity),
+        "PAYLOAD",
+        JSON.stringify({ id: product.id, category: product.category, franchise: product.franchise, locale })
+      ]);
+      pipeline.sendCommand([
+        "FT.SUGADD",
+        suggestionKeyForLocale(locale),
+        `${product[characterField] ?? product.character} ${product[categoryField] ?? product.category}`,
+        String(Math.max(1, product.popularity - 10)),
+        "PAYLOAD",
+        JSON.stringify({ id: product.id, category: product.category, franchise: product.franchise, locale })
+      ]);
+    }
   }
   await pipeline.exec();
 

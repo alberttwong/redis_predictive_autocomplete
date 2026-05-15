@@ -99,6 +99,63 @@ const searchModes = [
   }
 ];
 
+const languages = [
+  { code: "en", label: "English" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "zh", label: "Chinese" }
+];
+
+const localizedExamples = {
+  en: {
+    fuzzy: "stitc",
+    fulltext: "stitch hoodie",
+    pattern: "itch hood",
+    semantic: "space robot collectible display",
+    hybrid: "ocean adventure kids toy",
+    filters: "classic",
+    aggregate: "classic"
+  },
+  es: {
+    fuzzy: "edicion stitch",
+    fulltext: "stitch camiseta",
+    pattern: "camiseta grafica",
+    semantic: "juguete aventura oceano niños",
+    hybrid: "peluche azul para niños",
+    filters: "clasico",
+    aggregate: "clasico"
+  },
+  fr: {
+    fuzzy: "edition stitch",
+    fulltext: "stitch t-shirt",
+    pattern: "figurine vinyle",
+    semantic: "jouet aventure ocean enfants",
+    hybrid: "peluche bleue enfants",
+    filters: "classique",
+    aggregate: "classique"
+  },
+  zh: {
+    fuzzy: "史迪奇",
+    fulltext: "史迪奇 图案T恤",
+    pattern: "毛绒玩具",
+    semantic: "海洋 冒险 儿童 玩具",
+    hybrid: "蓝色 儿童 毛绒玩具",
+    filters: "经典",
+    aggregate: "经典"
+  }
+};
+
+const languageSearchExamples = [
+  { locale: "en", label: "English", query: "stitch hoodie" },
+  { locale: "es", label: "Spanish", query: "camiseta stitch" },
+  { locale: "fr", label: "French", query: "t-shirt graphique" },
+  { locale: "zh", label: "Chinese", query: "史迪奇" }
+];
+
+function modeExample(modeId, locale) {
+  return localizedExamples[locale]?.[modeId] ?? searchModes.find((mode) => mode.id === modeId)?.example ?? "";
+}
+
 const redisCloudDatabaseUrl = "https://cloud.redis.io/#/subscriptions/3246065/databases/14263116";
 
 function ProductCard({ product }) {
@@ -165,10 +222,10 @@ function Select({ label, value, options, onChange }) {
     <label className="field">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Any</option>
+        {label !== "Language" && <option value="">Any</option>}
         {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option key={option.code ?? option} value={option.code ?? option}>
+            {option.label ?? option}
           </option>
         ))}
       </select>
@@ -187,6 +244,7 @@ function App() {
   const [category, setCategory] = useState("");
   const [franchise, setFranchise] = useState("");
   const [audience, setAudience] = useState("");
+  const [locale, setLocale] = useState("en");
   const [combine, setCombine] = useState("rrf");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -196,10 +254,10 @@ function App() {
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const searchAbort = useRef();
   const activeSearchMode = searchModes.find((mode) => mode.id === activeMode) ?? searchModes[0];
-  const redisCommand = buildRedisCommand(activeMode, query, combine, { category, minPrice, maxPrice });
+  const redisCommand = buildRedisCommand(activeMode, query, combine, { category, minPrice, maxPrice }, locale);
 
   const searchParams = useMemo(() => {
-    const params = new URLSearchParams({ q: query, limit: "8" });
+    const params = new URLSearchParams({ q: query, limit: "8", locale });
     if (activeMode === "hybrid") params.set("combine", combine);
     const defaultFilterMode = activeMode === "filters";
     if (category || defaultFilterMode) params.set("category", category || "Toy");
@@ -208,7 +266,7 @@ function App() {
     if (minPrice || defaultFilterMode) params.set("minPrice", minPrice || "20");
     if (maxPrice || defaultFilterMode) params.set("maxPrice", maxPrice || "60");
     return params;
-  }, [activeMode, audience, category, combine, franchise, maxPrice, minPrice, query]);
+  }, [activeMode, audience, category, combine, franchise, locale, maxPrice, minPrice, query]);
 
   const runSearch = useCallback(async () => {
     searchAbort.current?.abort();
@@ -274,7 +332,7 @@ function App() {
         setSuggestions([]);
         return;
       }
-      api(`/api/suggest?q=${encodeURIComponent(query)}&limit=8`)
+      api(`/api/suggest?q=${encodeURIComponent(query)}&limit=8&locale=${locale}`)
         .then((data) => {
           setSuggestions(data.suggestions);
           setHighlightIndex(-1);
@@ -282,7 +340,7 @@ function App() {
         .catch(() => setSuggestions([]));
     }, 90);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [locale, query]);
 
   const seedRedis = async () => {
     setStatus("Seeding Redis");
@@ -299,7 +357,19 @@ function App() {
 
   const chooseMode = (mode) => {
     setActiveMode(mode.id);
-    setQuery(mode.example);
+    setQuery(modeExample(mode.id, locale));
+    setSuggestions([]);
+  };
+
+  const chooseLocale = (nextLocale) => {
+    setLocale(nextLocale);
+    setQuery(modeExample(activeMode, nextLocale));
+    setSuggestions([]);
+  };
+
+  const chooseLanguageExample = (example) => {
+    setLocale(example.locale);
+    setQuery(example.query);
     setSuggestions([]);
   };
 
@@ -374,7 +444,7 @@ function App() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={`Try ${activeSearchMode.example}`}
+              placeholder={`Try ${modeExample(activeMode, locale)}`}
               aria-label="Search Disney products"
             />
             <Sparkles size={20} />
@@ -399,12 +469,27 @@ function App() {
           )}
         </section>
 
+        <section className="language-examples" aria-label="Multilingual search examples">
+          {languageSearchExamples.map((example) => (
+            <button
+              key={`${example.locale}-${example.query}`}
+              type="button"
+              className={locale === example.locale && query === example.query ? "selected" : ""}
+              onClick={() => chooseLanguageExample(example)}
+            >
+              <span>{example.label}</span>
+              <strong>{example.query}</strong>
+            </button>
+          ))}
+        </section>
+
         <section className="control-band">
           <div className="control-title">
             <SlidersHorizontal size={18} />
             <span>{activeSearchMode.label} search controls</span>
           </div>
           <div className="controls">
+            <Select label="Language" value={locale} options={languages} onChange={chooseLocale} />
             <Select label="Category" value={category} options={facets.categories} onChange={setCategory} />
             <Select label="Franchise" value={franchise} options={facets.franchises} onChange={setFranchise} />
             <Select label="Audience" value={audience} options={facets.audiences} onChange={setAudience} />

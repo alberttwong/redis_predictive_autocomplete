@@ -13,15 +13,18 @@ test("builds exact, prefix, suffix, contains, fuzzy, partial, and multi-word cla
   const query = buildPatternQuery("itch hood", "");
 
   assert.ok(query.startsWith("(@name_exact:{itch\\ hood} | "));
-  assert.match(query, /\(itch\* \| @exact_terms:\{itch\} \| w'\*itch\*' \| w'\*itch' \| %itch%\)/);
-  assert.match(query, /\(hood\* \| @exact_terms:\{hood\} \| w'\*hood\*' \| w'\*hood' \| %hood%\)/);
+  assert.match(query, /@name:\(itch\* \| w'\*itch\*' \| w'\*itch' \| %itch%\)/);
+  assert.match(query, /@description:\(hood\* \| w'\*hood\*' \| w'\*hood' \| %hood%\)/);
+  assert.match(query, /@exact_terms:\{itch\}/);
+  assert.match(query, /@exact_terms:\{hood\}/);
   assert.ok(query.includes(") ("));
 });
 
 test("uses wildcard contains clauses for short tokens without stored n-grams", () => {
   const query = buildPatternQuery("up", "");
 
-  assert.match(query, /\(up\* \| @exact_terms:\{up\} \| w'\*up\*' \| w'\*up' \| %up%\)/);
+  assert.match(query, /@name:\(up\* \| w'\*up\*' \| w'\*up' \| %up%\)/);
+  assert.match(query, /@exact_terms:\{up\}/);
   assert.doesNotMatch(query, /@contains_grams:\{up\}/);
   assert.doesNotMatch(query, /@reverse_tokens/);
 });
@@ -52,8 +55,17 @@ test("builds a pasteable redis-cli pattern command from the real query", () => {
 
   assert.equal(
     command,
-    'FT.SEARCH idx:disney_products "(@name_exact:{itch\\\\ hood} | (itch* | @exact_terms:{itch} | w\'*itch*\' | w\'*itch\' | %itch%) (hood* | @exact_terms:{hood} | w\'*hood*\' | w\'*hood\' | %hood%))" LIMIT 0 8 LOAD 1 $ DIALECT 2'
+    'FT.SEARCH idx:disney_products "(@name_exact:{itch\\\\ hood} | (@name:(itch* | w\'*itch*\' | w\'*itch\' | %itch%) | @description:(itch* | w\'*itch*\' | w\'*itch\' | %itch%) | @exact_terms:{itch}) (@name:(hood* | w\'*hood*\' | w\'*hood\' | %hood%) | @description:(hood* | w\'*hood*\' | w\'*hood\' | %hood%) | @exact_terms:{hood}))" LANGUAGE english LIMIT 0 8 LOAD 1 $ DIALECT 2'
   );
+});
+
+test("builds language-specific pattern clauses", () => {
+  const query = buildPatternQuery("史迪奇 毛绒", "", "zh");
+
+  assert.match(query, /@name_exact_zh:\{/);
+  assert.match(query, /@name_zh:\(/);
+  assert.match(query, /@description_zh:\(/);
+  assert.match(query, /@exact_terms_zh:\{/);
 });
 
 test("explains stale indexes that are missing pattern-search fields", () => {

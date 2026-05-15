@@ -3,6 +3,31 @@ export const INDEX_NAME = "idx:disney_products";
 export const PRODUCT_PREFIX = "product:";
 export const SUGGESTION_KEY = "suggest:disney_products";
 
+export const LOCALES = {
+  en: { label: "English", redisLanguage: "english", suffix: "" },
+  es: { label: "Spanish", redisLanguage: "spanish", suffix: "_es" },
+  fr: { label: "French", redisLanguage: "french", suffix: "_fr" },
+  zh: { label: "Chinese", redisLanguage: "chinese", suffix: "_zh" }
+};
+
+export function normalizeLocale(value) {
+  const locale = String(value ?? "en").toLowerCase().split(/[-_]/)[0];
+  return LOCALES[locale] ? locale : "en";
+}
+
+export function localeConfig(locale) {
+  return LOCALES[normalizeLocale(locale)];
+}
+
+export function localizedField(field, locale) {
+  return `${field}${localeConfig(locale).suffix}`;
+}
+
+export function suggestionKeyForLocale(locale) {
+  const normalized = normalizeLocale(locale);
+  return normalized === "en" ? SUGGESTION_KEY : `${SUGGESTION_KEY}:${normalized}`;
+}
+
 const tokenWeights = new Map([
   ["mickey", 1.8],
   ["minnie", 1.7],
@@ -37,11 +62,7 @@ function hashToken(token, salt = 0) {
 
 export function embedText(text) {
   const vector = new Float32Array(VECTOR_DIMENSIONS);
-  const tokens = text
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
+  const tokens = searchTokens(text);
 
   for (const token of tokens) {
     const weight = tokenWeights.get(token) ?? 1;
@@ -77,38 +98,64 @@ export function escapeSearchTerm(value) {
     .replace(/\s+/g, " ");
 }
 
-export function normalizeSearchText(value) {
-  return String(value)
+export function normalizeSearchText(value, locale = "en") {
+  return tokenizeSearchText(value, locale).join(" ");
+}
+
+export function tokenizeSearchText(value, locale = "en") {
+  const normalized = normalizeLocale(locale);
+  const text = String(value)
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
     .trim();
+
+  if (!text) return [];
+
+  if (normalized === "zh") {
+    return text.split(/\s+/).filter(Boolean);
+  }
+
+  return text.split(/\s+/).filter(Boolean);
 }
 
-export function searchTokens(value) {
-  return normalizeSearchText(value).split(" ").filter(Boolean);
+export function searchTokens(value, locale = "en") {
+  return tokenizeSearchText(value, locale);
 }
 
-export function productSearchText(product) {
+export function productSearchText(product, locale = "en") {
+  const normalized = normalizeLocale(locale);
+  const name = localizedField("name", normalized);
+  const description = localizedField("description", normalized);
+  const character = localizedField("character", normalized);
+  const category = localizedField("category", normalized);
+  const audience = localizedField("audience", normalized);
   return [
-    product.name,
+    product[name] ?? product.name,
     product.franchise,
-    product.character,
-    product.category,
-    product.audience,
+    product[character] ?? product.character,
+    product[category] ?? product.category,
+    product[audience] ?? product.audience,
     product.tags.join(" "),
-    product.description
+    product[description] ?? product.description
   ].join(" ");
 }
 
 export function productSearchMetadata(product) {
-  const text = productSearchText(product);
-  const tokens = [...new Set(searchTokens(text))];
+  const metadata = {};
 
-  return {
-    name_exact: normalizeSearchText(product.name),
-    exact_terms: tokens
-  };
+  for (const locale of Object.keys(LOCALES)) {
+    const nameField = localizedField("name", locale);
+    const nameExactField = localizedField("name_exact", locale);
+    const exactTermsField = localizedField("exact_terms", locale);
+    const text = productSearchText(product, locale);
+    const tokens = [...new Set(searchTokens(text, locale))];
+
+    metadata[nameExactField] = normalizeSearchText(product[nameField] ?? product.name, locale);
+    metadata[exactTermsField] = tokens;
+  }
+
+  return metadata;
 }
 
 export function enrichProductForSearch(product) {
@@ -117,6 +164,12 @@ export function enrichProductForSearch(product) {
     reverse_tokens: _legacyReverseTokens,
     exact_terms: _legacyExactTerms,
     name_exact: _legacyNameExact,
+    exact_terms_es: _legacyExactTermsEs,
+    name_exact_es: _legacyNameExactEs,
+    exact_terms_fr: _legacyExactTermsFr,
+    name_exact_fr: _legacyNameExactFr,
+    exact_terms_zh: _legacyExactTermsZh,
+    name_exact_zh: _legacyNameExactZh,
     ...baseProduct
   } = product;
 
@@ -127,6 +180,33 @@ export function enrichProductForSearch(product) {
 }
 
 export async function createProductIndex(client, dimensions = VECTOR_DIMENSIONS) {
+  const textSchema = Object.keys(LOCALES).flatMap((locale) => {
+    const weight = locale === "en" ? ["WEIGHT", "5.0"] : ["WEIGHT", "4.0"];
+    return [
+      `$.${localizedField("name", locale)}`,
+      "AS",
+      localizedField("name", locale),
+      "TEXT",
+      ...weight,
+      "WITHSUFFIXTRIE",
+      `$.${localizedField("description", locale)}`,
+      "AS",
+      localizedField("description", locale),
+      "TEXT",
+      "WEIGHT",
+      "1.0",
+      "WITHSUFFIXTRIE",
+      `$.${localizedField("name_exact", locale)}`,
+      "AS",
+      localizedField("name_exact", locale),
+      "TAG",
+      `$.${localizedField("exact_terms", locale)}[*]`,
+      "AS",
+      localizedField("exact_terms", locale),
+      "TAG"
+    ];
+  });
+
   await client.sendCommand([
     "FT.CREATE",
     INDEX_NAME,
@@ -136,28 +216,7 @@ export async function createProductIndex(client, dimensions = VECTOR_DIMENSIONS)
     "1",
     PRODUCT_PREFIX,
     "SCHEMA",
-    "$.name",
-    "AS",
-    "name",
-    "TEXT",
-    "WEIGHT",
-    "5.0",
-    "WITHSUFFIXTRIE",
-    "$.description",
-    "AS",
-    "description",
-    "TEXT",
-    "WEIGHT",
-    "1.0",
-    "WITHSUFFIXTRIE",
-    "$.name_exact",
-    "AS",
-    "name_exact",
-    "TAG",
-    "$.exact_terms[*]",
-    "AS",
-    "exact_terms",
-    "TAG",
+    ...textSchema,
     "$.franchise",
     "AS",
     "franchise",

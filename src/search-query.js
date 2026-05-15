@@ -1,4 +1,18 @@
-import { escapeSearchTerm, escapeTag, normalizeSearchText, searchTokens } from "../scripts/product-utils.js";
+import {
+  escapeSearchTerm,
+  escapeTag,
+  localizedField,
+  normalizeSearchText,
+  searchTokens
+} from "../scripts/product-utils.js";
+
+function localizedTextFields(locale) {
+  return [localizedField("name", locale), localizedField("description", locale)];
+}
+
+function fieldScopedClauses(fields, clauses) {
+  return fields.map((field) => `@${field}:(${clauses.join(" | ")})`).join(" | ");
+}
 
 export function buildFilters({ category, franchise, audience, minPrice, maxPrice }) {
   const filters = [];
@@ -11,38 +25,41 @@ export function buildFilters({ category, franchise, audience, minPrice, maxPrice
   return filters.join(" ");
 }
 
-export function buildTextQuery(term, filters) {
-  const cleanTerm = escapeSearchTerm(term);
-  const text = cleanTerm
-    ? cleanTerm
-        .split(" ")
-        .filter(Boolean)
-        .map((token) => `%${token}% | ${token}*`)
+export function buildTextQuery(term, filters, locale = "en") {
+  const tokens = searchTokens(term, locale);
+  const fields = localizedTextFields(locale);
+  const exactTermsField = localizedField("exact_terms", locale);
+  const text = tokens.length
+    ? tokens
+        .map((token) => {
+          const cleanToken = escapeSearchTerm(token);
+          return `(${fieldScopedClauses(fields, [`%${cleanToken}%`, `${cleanToken}*`])} | @${exactTermsField}:{${escapeTag(token)}})`;
+        })
         .join(" ")
     : "*";
   return [filters, text].filter(Boolean).join(" ");
 }
 
-export function buildPatternQuery(term, filters) {
-  const cleanTerm = normalizeSearchText(term);
-  const tokens = searchTokens(term);
+export function buildPatternQuery(term, filters, locale = "en") {
+  const cleanTerm = normalizeSearchText(term, locale);
+  const tokens = searchTokens(term, locale);
+  const fields = localizedTextFields(locale);
+  const exactNameField = localizedField("name_exact", locale);
+  const exactTermsField = localizedField("exact_terms", locale);
 
   if (!tokens.length) return [filters, "*"].filter(Boolean).join(" ");
 
   const tokenGroups = tokens.map((token) => {
+    const cleanToken = escapeSearchTerm(token);
     const clauses = [
-      `${token}*`,
-      `@exact_terms:{${escapeTag(token)}}`,
-      `w'*${token}*'`,
-      `w'*${token}'`
+      fieldScopedClauses(fields, [`${cleanToken}*`, `w'*${cleanToken}*'`, `w'*${cleanToken}'`, `%${cleanToken}%`]),
+      `@${exactTermsField}:{${escapeTag(token)}}`
     ];
-
-    clauses.push(`%${token}%`);
 
     return `(${clauses.join(" | ")})`;
   });
 
-  const exactName = `@name_exact:{${escapeTag(cleanTerm)}}`;
+  const exactName = `@${exactNameField}:{${escapeTag(cleanTerm)}}`;
   const text = `(${exactName} | ${tokenGroups.join(" ")})`;
 
   return [filters, text].filter(Boolean).join(" ");
